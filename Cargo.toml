@@ -1,7 +1,7 @@
 [package]
 name = "async-io-map"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 futures-lite = "2.6.0"
