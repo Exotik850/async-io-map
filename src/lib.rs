@@ -4,4 +4,4 @@ pub mod write;
 #[cfg(test)]
 mod test;
 
-pub const BUFFER_SIZE: usize = 8192;
+pub const DEFAULT_BUFFER_SIZE: usize = 8192;

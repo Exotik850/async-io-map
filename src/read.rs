@@ -1,4 +1,4 @@
-use crate::BUFFER_SIZE;
+use crate::DEFAULT_BUFFER_SIZE;
 use futures_lite::{io, ready, AsyncBufRead, AsyncRead};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -46,7 +46,7 @@ where
             process_fn: Box::new(process_fn),
             pos: 0,
             cap: 0,
-            buf: vec![0; BUFFER_SIZE].into_boxed_slice(), // Start with a reasonable capacity
+            buf: vec![0; DEFAULT_BUFFER_SIZE].into_boxed_slice(), // Start with a reasonable capacity
         }
     }
 
@@ -124,7 +124,7 @@ pub trait AsyncMapRead<'a, R> {
     where
         Self: Sized,
     {
-        self.map_with_capacity(f, BUFFER_SIZE)
+        self.map_with_capacity(f, DEFAULT_BUFFER_SIZE)
     }
 
     /// Maps the underlying reader to an `AsyncMapReader` using the provided mapping function

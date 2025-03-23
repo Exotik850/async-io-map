@@ -8,7 +8,7 @@ use futures_lite::{
     ready, AsyncWrite,
 };
 
-use crate::BUFFER_SIZE;
+use crate::DEFAULT_BUFFER_SIZE;
 
 /// A trait for mapping data written to an underlying writer.
 pub trait MapWriteFn {
@@ -57,7 +57,7 @@ impl<'a, W: AsyncWrite> AsyncMapWriter<'a, W> {
     /// 
     /// This function initializes the writer with the provided `process_fn` to map the data before writing.
     pub fn new(writer: W, process_fn: impl MapWriteFn + 'a) -> Self {
-      Self::with_capacity(writer, process_fn, BUFFER_SIZE)
+      Self::with_capacity(writer, process_fn, DEFAULT_BUFFER_SIZE)
     }
     
     /// Creates a new `AsyncMapWriter` with a specified buffer capacity.
@@ -199,7 +199,7 @@ pub trait AsyncMapWrite<'a, W> {
     where
         Self: Sized,
     {
-        self.map_with_capacity(process_fn, BUFFER_SIZE)
+        self.map_with_capacity(process_fn, DEFAULT_BUFFER_SIZE)
     }
 
     /// Maps the data written to the writer using the provided function with a specified buffer capacity.
