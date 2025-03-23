@@ -41,7 +41,8 @@ pin_project_lite::pin_project! {
   /// of a specified size (default is 8KB).
   /// 
   /// The buffer size also acts as a threshold for the length of data passed to the mapping function, 
-  /// and will be gauranteed to be equal to or less than the specified capacity.
+  /// and will be gauranteed to be equal to or less than the specified capacity, unless the 
+  /// function modifies the buffer capacity itself.
   pub struct AsyncMapWriter<'a, W> {
      #[pin]
      inner: W,

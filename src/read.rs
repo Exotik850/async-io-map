@@ -25,6 +25,14 @@ where
 pin_project_lite::pin_project! {
   /// A wrapper around an `AsyncRead` that allows for data processing
   /// before the actual I/O operation.
+  /// 
+  /// This struct buffers the data read from the underlying reader and applies a mapping function
+  /// to the data before returning it. It is designed to optimize reads by using a buffer
+  /// of a specified size (default is 8KB).
+  /// 
+  /// The buffer size also acts as a threshold for the length of data passed to the mapping function,
+  /// and will be gauranteed to be equal the capacity of the underlying buffer, until the last read operation,
+  /// where it may be smaller.
   pub struct AsyncMapReader<'a, R> {
       #[pin]
       inner: R,
