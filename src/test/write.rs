@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicI32;
 
-use futures_lite::{AsyncWriteExt, future::block_on, io::Cursor};
+use futures_lite::{future::block_on, io::Cursor, AsyncWriteExt};
 
 use crate::write::AsyncMapWriter;
 

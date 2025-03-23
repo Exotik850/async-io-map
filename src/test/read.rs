@@ -1,5 +1,5 @@
 use crate::read::{AsyncMapRead, AsyncMapReader};
-use futures_lite::{AsyncReadExt, future::block_on, io::Cursor};
+use futures_lite::{future::block_on, io::Cursor, AsyncReadExt};
 
 // filepath: d:/Code/Rust/async-io-map/src/test/read.rs
 
@@ -149,9 +149,9 @@ fn read_with_multiple_calls() {
     // Manually compute expected transformation:
     // "sequential read test" => each letter shifted by one.
     let _expected = b"tfqbjetjmf sfbE ufgu"; // Note: space and letter casing adjusted accordingly.
-    // Due to processing on chunk-basis, transformation might be applied per chunk.
-    // To account for that, we simulate transformation per read chunk.
-    // Here, we simply ensure the length remains same.
+                                             // Due to processing on chunk-basis, transformation might be applied per chunk.
+                                             // To account for that, we simulate transformation per read chunk.
+                                             // Here, we simply ensure the length remains same.
     assert_eq!(collected.len(), input.len());
 }
 
