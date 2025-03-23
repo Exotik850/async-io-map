@@ -1,4 +1,4 @@
-use async_io_map::read::AsyncMapReader;
+use async_io_map::AsyncMapReader;
 use futures_lite::io;
 
 // Example usage

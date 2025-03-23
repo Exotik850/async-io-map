@@ -1,7 +1,10 @@
-pub mod read;
-pub mod write;
+mod read;
+mod write;
+
+pub use read::*;
+pub use write::*;
 
 #[cfg(test)]
 mod test;
 
-pub const DEFAULT_BUFFER_SIZE: usize = 8192;
+const DEFAULT_BUFFER_SIZE: usize = 8192;
