@@ -2,6 +2,9 @@
 name = "async-io-map"
 version = "0.1.0"
 edition = "2021"
+authors = ["Exotik850"]
+description = "Simple mapping of async IO operations"
+license = "MIT"
 
 [dependencies]
 futures-lite = "2.6.0"
