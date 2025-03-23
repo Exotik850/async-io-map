@@ -151,3 +151,13 @@ impl<W: AsyncWrite> AsyncWrite for AsyncMapWriter<'_, W> {
         self.get_pin_mut().poll_close(cx)
     }
 }
+
+pub trait AsyncMapWrite<'a, W> { 
+    fn map(self, process_fn: impl MapWriteFn + 'a) -> AsyncMapWriter<'a, W>;
+}
+
+impl<'a, W: AsyncWrite> AsyncMapWrite<'a, W> for W {
+    fn map(self, process_fn: impl MapWriteFn + 'a) -> AsyncMapWriter<'a, W> {
+        AsyncMapWriter::new(self, process_fn)
+    }
+}
