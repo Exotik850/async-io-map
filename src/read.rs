@@ -1,5 +1,5 @@
 use crate::BUFFER_SIZE;
-use futures_lite::{AsyncBufRead, AsyncRead, io, ready};
+use futures_lite::{io, ready, AsyncBufRead, AsyncRead};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -19,10 +19,10 @@ where
 pin_project_lite::pin_project! {
   /// A wrapper around an `AsyncRead` that allows for data processing
   /// before the actual I/O operation.
-  pub struct AsyncMapReader<R> {
+  pub struct AsyncMapReader<'a, R> {
       #[pin]
       inner: R,
-      process_fn: Box<dyn MapReadFn>,
+      process_fn: Box<dyn MapReadFn + 'a>,
       pos: usize,
       cap: usize,
       // Pre-allocated buffer to avoid allocations on each read
@@ -30,12 +30,12 @@ pin_project_lite::pin_project! {
   }
 }
 
-impl<R> AsyncMapReader<R>
+impl<'a, R> AsyncMapReader<'a, R>
 where
     R: AsyncRead,
 {
     /// Create a new wrapper around an async reader with a processing function
-    pub fn new(reader: R, process_fn: impl MapReadFn + 'static) -> Self {
+    pub fn new(reader: R, process_fn: impl MapReadFn + 'a) -> Self {
         Self {
             inner: reader,
             process_fn: Box::new(process_fn),
@@ -46,7 +46,7 @@ where
     }
 
     /// Create a new wrapper with a specific initial buffer capacity
-    pub fn with_capacity(reader: R, process_fn: impl MapReadFn + 'static, capacity: usize) -> Self {
+    pub fn with_capacity(reader: R, process_fn: impl MapReadFn + 'a, capacity: usize) -> Self {
         Self {
             inner: reader,
             process_fn: Box::new(process_fn),
@@ -62,7 +62,7 @@ where
     }
 }
 
-impl<R> AsyncRead for AsyncMapReader<R>
+impl<'a, R> AsyncRead for AsyncMapReader<'a, R>
 where
     R: AsyncRead,
 {
@@ -88,7 +88,7 @@ where
     }
 }
 
-impl<R: AsyncRead> AsyncBufRead for AsyncMapReader<R> {
+impl<'a, R: AsyncRead> AsyncBufRead for AsyncMapReader<'a, R> {
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<&[u8]>> {
         let mut this = self.project();
         if *this.pos >= *this.cap {
@@ -111,12 +111,19 @@ impl<R: AsyncRead> AsyncBufRead for AsyncMapReader<R> {
     }
 }
 
-pub trait AsyncMapRead<R> {
-    fn map(self, f: impl MapReadFn + 'static) -> AsyncMapReader<R>;
+pub trait AsyncMapRead<'a, R> {
+    fn map(self, f: impl MapReadFn + 'a) -> AsyncMapReader<'a, R>
+    where
+        Self: Sized,
+    {
+        self.map_with_capacity(f, BUFFER_SIZE)
+    }
+
+    fn map_with_capacity(self, f: impl MapReadFn + 'a, capacity: usize) -> AsyncMapReader<'a, R>;
 }
 
-impl<R: AsyncRead> AsyncMapRead<R> for R {
-    fn map(self, f: impl MapReadFn + 'static) -> AsyncMapReader<R> {
-        AsyncMapReader::new(self, f)
+impl<'a, R: AsyncRead> AsyncMapRead<'a, R> for R {
+    fn map_with_capacity(self, f: impl MapReadFn + 'a, capacity: usize) -> AsyncMapReader<'a, R> {
+        AsyncMapReader::with_capacity(self, f, capacity)
     }
 }
