@@ -107,3 +107,21 @@ fn test_close_behavior() {
         assert_eq!(result, b"prefix:data");
     });
 }
+
+#[test]
+fn test_identity_function() {
+    // Test that an identity function (no transformation) works correctly
+    let output = Cursor::new(vec![]);
+    let transformer = |_: &mut Vec<u8>| {
+        // No transformation needed, just return the buffer as is
+    };
+
+    let mut writer = AsyncMapWriter::new(output, transformer);
+    block_on(async {
+        writer.write_all(b"identity test").await.unwrap();
+        writer.flush().await.unwrap();
+
+        let result = writer.into_inner().into_inner();
+        assert_eq!(result, b"identity test");
+    });
+}

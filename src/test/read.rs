@@ -4,7 +4,7 @@ use futures_lite::{AsyncReadExt, future::block_on, io::Cursor};
 // filepath: d:/Code/Rust/async-io-map/src/test/read.rs
 
 #[test]
-fn test_basic_transformation() {
+fn basic_transformation() {
     // Conversion: lowercase to uppercase (similar to write test)
     let input = b"hello world";
     let cursor = Cursor::new(input.to_vec());
@@ -24,7 +24,7 @@ fn test_basic_transformation() {
     assert_eq!(result, b"HELLO WORLD");
 }
 #[test]
-fn test_partial_reads() {
+fn partial_reads() {
     // Test that multiple small reads accumulate correctly when the reader's
     // internal buffering causes the transformation to be applied on fixed‐size chunks.
     let input = b"async io test";
@@ -69,7 +69,7 @@ fn test_partial_reads() {
 }
 
 #[test]
-fn test_large_read_exceeding_buffer() {
+fn large_read_exceeding_buffer() {
     // Test reading when the input exceeds the internal buffer capacity.
     // Transformation: duplicate each byte.
     let input = b"abcdefghij";
@@ -103,7 +103,7 @@ fn test_large_read_exceeding_buffer() {
 }
 
 #[test]
-fn test_empty_input() {
+fn empty_input() {
     // Ensure an empty source yields an empty output.
     let cursor = Cursor::new(Vec::<u8>::new());
     let transformer = |_buf: &mut [u8]| {
@@ -119,7 +119,7 @@ fn test_empty_input() {
 }
 
 #[test]
-fn test_read_with_multiple_calls() {
+fn read_with_multiple_calls() {
     // Test that calling read in sequence returns correctly processed data.
     let input = b"sequential read test";
     let cursor = Cursor::new(input.to_vec());
@@ -153,4 +153,21 @@ fn test_read_with_multiple_calls() {
     // To account for that, we simulate transformation per read chunk.
     // Here, we simply ensure the length remains same.
     assert_eq!(collected.len(), input.len());
+}
+
+#[test]
+fn identity_function() {
+    // Test that an identity function (no transformation) works correctly
+    let input = b"identity test";
+    let cursor = Cursor::new(input.to_vec());
+    let transformer = |_buf: &mut [u8]| {
+        // No transformation needed, just return the buffer as is
+    };
+
+    let mut reader = AsyncMapReader::new(cursor, transformer);
+    let mut result = Vec::new();
+    block_on(async {
+        reader.read_to_end(&mut result).await.unwrap();
+    });
+    assert_eq!(result, input, "Expected output to match input");
 }
