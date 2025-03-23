@@ -190,6 +190,7 @@ impl<W: AsyncWrite> AsyncWrite for AsyncMapWriter<'_, W> {
     }
 }
 
+/// A trait for types that can be mapped to an `AsyncMapWriter`.
 pub trait AsyncMapWrite<'a, W> {
     /// Maps the data written to the writer using the provided function.
     /// 
