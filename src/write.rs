@@ -100,18 +100,22 @@ impl<'a, W: AsyncWrite> AsyncMapWriter<'a, W> {
         Poll::Ready(ret)
     }
 
-    fn large_write(self: Pin<&mut Self>, buf: &[u8]) {
-        let this = self.project();
-        // Clear any leftover data.
-        this.buf.clear();
-        // Ensure the buffer can hold the new data.
-        if buf.len() > this.buf.capacity() {
-            this.buf.reserve(buf.len() - this.buf.capacity());
+    fn large_write(self: Pin<&mut Self>, buf: &[u8]) -> usize {
+      let this = self.project();
+      // Determine how many bytes can fit into the unused part of the internal buffer.
+      let available = this.buf.capacity() - this.buf.len();
+      let to_read = available.min(buf.len());
+
+      // Only append if there's space.
+      if to_read > 0 {
+        this.buf.extend_from_slice(&buf[..to_read]);
+        // If not yet transformed, process the accumulated data.
+        if !*this.transformed {
+          (this.process_fn).map_write(this.buf);
+          *this.transformed = true;
         }
-        // Copy and process the new data into our internal buffer.
-        this.buf.extend_from_slice(buf);
-        (this.process_fn).map_write(this.buf);
-        *this.transformed = true; // Mark as transformed since we've already applied the function
+      }
+      to_read
     }
 }
 
@@ -132,12 +136,12 @@ impl<W: AsyncWrite> AsyncWrite for AsyncMapWriter<'_, W> {
             return Pin::new(&mut *self.project().buf).poll_write(cx, buf);
         }
         // If data is large, process it before writing using the internal buffer.
-        self.as_mut().large_write(buf);
+        let read = self.as_mut().large_write(buf);
 
         // Instead of attempting to write immediately and potentially leaving
-        // data behind, we'll just report that all input bytes were consumed.
-        // The transformed data will be completely written during flush.
-        Poll::Ready(Ok(buf.len()))
+        // data behind, we'll just report however many bytes we've processed
+        // so far.
+        Poll::Ready(Ok(read))
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
