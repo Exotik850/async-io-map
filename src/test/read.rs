@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use crate::read::{AsyncMapRead, AsyncMapReader};
 use futures_lite::{future::block_on, io::Cursor, AsyncReadExt};
 
@@ -170,4 +172,88 @@ fn identity_function() {
         reader.read_to_end(&mut result).await.unwrap();
     });
     assert_eq!(result, input, "Expected output to match input");
+}
+
+#[test]
+fn buffer_size_guarantee() {
+    // Create a data source that's larger than our buffer
+    // 100 bytes of data with a 8-byte buffer should give us
+    // 12 full buffers (96 bytes) and 1 partial buffer (4 bytes)
+    let data = (0..100).map(|i| i as u8).collect::<Vec<u8>>();
+    let reader = Cursor::new(data);
+
+    // Buffer size for the test
+    const BUFFER_SIZE: usize = 8;
+
+    // Store the sizes of chunks processed
+    let processed_sizes = Arc::new(Mutex::new(Vec::new()));
+    let processed_sizes_clone = Arc::clone(&processed_sizes);
+
+    // Mapping function that records the size of each chunk
+    let mapping_fn = move |buf: &mut [u8]| {
+        let size = buf.len();
+        processed_sizes_clone.lock().unwrap().push(size);
+
+        // Optional: modify the data to ensure the mapping is applied
+        for byte in buf.iter_mut() {
+            *byte = byte.wrapping_add(1);
+        }
+    };
+
+    // Create reader with our specific buffer size
+    let mut mapped_reader = reader.map_with_capacity(mapping_fn, BUFFER_SIZE);
+
+    // Read all data
+    block_on(async {
+        let mut output = Vec::new();
+        futures_lite::io::copy(&mut mapped_reader, &mut output)
+            .await
+            .unwrap();
+
+        // Verify output is correctly transformed
+        for (i, byte) in output.iter().enumerate() {
+            assert_eq!(*byte, (i as u8).wrapping_add(1));
+        }
+    });
+
+    // Check chunk sizes
+    let sizes = processed_sizes.lock().unwrap();
+
+    // All chunks except the last should be exactly BUFFER_SIZE
+    for (i, &size) in sizes.iter().enumerate() {
+        if i < sizes.len() - 1 {
+            assert_eq!(
+                size, BUFFER_SIZE,
+                "Chunk {} was {} bytes, expected exactly {} bytes",
+                i, size, BUFFER_SIZE
+            );
+        } else {
+            // Last chunk can be equal to or smaller than BUFFER_SIZE
+            assert!(
+                size <= BUFFER_SIZE,
+                "Last chunk was {} bytes, should be <= {} bytes",
+                size,
+                BUFFER_SIZE
+            );
+
+            // In our test case, we know exactly how big the last chunk should be
+            assert_eq!(
+                size,
+                100 % BUFFER_SIZE,
+                "Last chunk should be {} bytes but was {}",
+                100 % BUFFER_SIZE,
+                size
+            );
+        }
+    }
+
+    // Verify we got the expected number of chunks
+    let expected_chunks = (100 + BUFFER_SIZE - 1) / BUFFER_SIZE; // Ceiling division
+    assert_eq!(
+        sizes.len(),
+        expected_chunks,
+        "Expected {} chunks but got {}",
+        expected_chunks,
+        sizes.len()
+    );
 }
