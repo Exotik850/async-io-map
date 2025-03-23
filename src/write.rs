@@ -10,7 +10,16 @@ use futures_lite::{
 
 use crate::BUFFER_SIZE;
 
+/// A trait for mapping data written to an underlying writer.
 pub trait MapWriteFn {
+    /// Applies a mapping function to the data before writing it to the underlying writer.
+    /// This function takes a mutable reference to a buffer and modifies it in place.
+    /// 
+    /// Be aware that changing the capacity of the buffer will affect any subsequent writes,
+    /// if this is not intended, ensure to reset the capacity of the buffer after processing.
+    /// 
+    /// This behavior is intended to allow for a variety of use cases, such as base64 encoding,
+    /// which may require expanding the buffer size to accommodate the transformed data.
     fn map_write(&mut self, buf: &mut Vec<u8>);
 }
 
@@ -24,21 +33,36 @@ where
 }
 
 pin_project_lite::pin_project! {
+  /// A wrapper around an `AsyncWrite` that allows for data processing
+  /// before the actual I/O operation.
+  /// 
+  /// This struct buffers the data written to the underlying writer and applies a mapping function
+  /// to the data before writing it out. It is designed to optimize writes by using a buffer
+  /// of a specified size (default is 8KB).
+  /// 
+  /// The buffer size also acts as a threshold for the length of data passed to the mapping function, 
+  /// and will be gauranteed to be equal to or less than the specified capacity.
   pub struct AsyncMapWriter<'a, W> {
      #[pin]
      inner: W,
      process_fn: Box<dyn MapWriteFn + 'a>,
-     buf: Vec<u8>,
-     written: usize,
+     buf: Vec<u8>, // Buffer to hold data before writing
+     written: usize, // Track how much has been written to the buffer
      transformed: bool, // Add a flag to track if the buffer is already transformed
   }
 }
 
 impl<'a, W: AsyncWrite> AsyncMapWriter<'a, W> {
+    /// Creates a new `AsyncMapWriter` with a default buffer size of 8KB.
+    /// 
+    /// This function initializes the writer with the provided `process_fn` to map the data before writing.
     pub fn new(writer: W, process_fn: impl MapWriteFn + 'a) -> Self {
-        Self::with_capacity(writer, process_fn, BUFFER_SIZE)
+      Self::with_capacity(writer, process_fn, BUFFER_SIZE)
     }
-
+    
+    /// Creates a new `AsyncMapWriter` with a specified buffer capacity.
+    /// 
+    /// This function initializes the writer with the provided `process_fn` to map the data before writing.
     pub fn with_capacity(writer: W, process_fn: impl MapWriteFn + 'a, capacity: usize) -> Self {
         Self {
             inner: writer,
@@ -49,6 +73,7 @@ impl<'a, W: AsyncWrite> AsyncMapWriter<'a, W> {
         }
     }
 
+    /// Consumes the `AsyncMapWriter` and returns the underlying writer.
     pub fn into_inner(self) -> W {
         self.inner
     }
@@ -57,6 +82,8 @@ impl<'a, W: AsyncWrite> AsyncMapWriter<'a, W> {
         self.project().inner
     }
 
+    /// Flushes the internal buffer, applying the mapping function if necessary.
+    /// This function writes the transformed data to the underlying writer.
     fn poll_flush_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let mut this = self.project();
         // If nothing has been written yet and the buffer isn't transformed, apply the transformation
@@ -100,22 +127,30 @@ impl<'a, W: AsyncWrite> AsyncMapWriter<'a, W> {
         Poll::Ready(ret)
     }
 
-    fn large_write(self: Pin<&mut Self>, buf: &[u8]) -> usize {
-      let this = self.project();
-      // Determine how many bytes can fit into the unused part of the internal buffer.
-      let available = this.buf.capacity() - this.buf.len();
-      let to_read = available.min(buf.len());
+    /// Handles large writes by processing the data before writing it to the underlying writer.
+    /// This function ensures that the internal buffer is transformed before writing.
+    /// 
+    /// returns the number of bytes written to the internal buffer.
+    fn partial_write(self: Pin<&mut Self>, buf: &[u8]) -> usize {
+        let this = self.project();
+        debug_assert!(
+            !*this.transformed,
+            "large_write should only be called when the buffer is not transformed"
+        );
+        // Determine how many bytes can fit into the unused part of the internal buffer.
+        let available = this.buf.capacity() - this.buf.len();
+        let to_read = available.min(buf.len());
 
-      // Only append if there's space.
-      if to_read > 0 {
-        this.buf.extend_from_slice(&buf[..to_read]);
-        // If not yet transformed, process the accumulated data.
-        if !*this.transformed {
-          (this.process_fn).map_write(this.buf);
-          *this.transformed = true;
+        // Only append if there's space.
+        if to_read > 0 {
+            this.buf.extend_from_slice(&buf[..to_read]);
+            // If not yet transformed, process the accumulated data.
+            if !*this.transformed {
+                (this.process_fn).map_write(this.buf);
+                *this.transformed = true;
+            }
         }
-      }
-      to_read
+        to_read
     }
 }
 
@@ -136,7 +171,7 @@ impl<W: AsyncWrite> AsyncWrite for AsyncMapWriter<'_, W> {
             return Pin::new(&mut *self.project().buf).poll_write(cx, buf);
         }
         // If data is large, process it before writing using the internal buffer.
-        let read = self.as_mut().large_write(buf);
+        let read = self.as_mut().partial_write(buf);
 
         // Instead of attempting to write immediately and potentially leaving
         // data behind, we'll just report however many bytes we've processed
@@ -156,6 +191,10 @@ impl<W: AsyncWrite> AsyncWrite for AsyncMapWriter<'_, W> {
 }
 
 pub trait AsyncMapWrite<'a, W> {
+    /// Maps the data written to the writer using the provided function.
+    /// 
+    /// This function will apply the mapping function to the data before writing it to the underlying writer.
+    /// This also buffers the data (with a buffer size of 8KB) to optimize writes.
     fn map(self, process_fn: impl MapWriteFn + 'a) -> AsyncMapWriter<'a, W>
     where
         Self: Sized,
@@ -163,6 +202,11 @@ pub trait AsyncMapWrite<'a, W> {
         self.map_with_capacity(process_fn, BUFFER_SIZE)
     }
 
+    /// Maps the data written to the writer using the provided function with a specified buffer capacity.
+    /// 
+    /// This function allows you to specify the size of the internal buffer used for writing.
+    /// The default buffer size is 8KB.
+    /// If you need to optimize for larger writes, you can increase this size.
     fn map_with_capacity(
         self,
         process_fn: impl MapWriteFn + 'a,
