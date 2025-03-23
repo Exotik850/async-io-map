@@ -5,7 +5,7 @@ use futures_lite::{future::block_on, io::Cursor, AsyncWriteExt};
 use crate::write::AsyncMapWriter;
 
 #[test]
-fn test_basic_transformation() {
+fn basic_transformation() {
     let output = Cursor::new(vec![]);
     // Create a transformation that converts lowercase to uppercase
     let transformer = |buf: &mut Vec<u8>| {
@@ -27,7 +27,7 @@ fn test_basic_transformation() {
 }
 
 #[test]
-fn test_small_writes_accumulation() {
+fn small_writes_accumulation() {
     let output = Cursor::new(vec![]);
     let counter = AtomicI32::new(0);
     // Count how many times transformation is applied
@@ -43,12 +43,12 @@ fn test_small_writes_accumulation() {
 
         assert_eq!(writer.into_inner().into_inner(), b"abcdef");
         let counter = counter.load(std::sync::atomic::Ordering::SeqCst);
-        assert!(counter > 0, "Transformer should have been called");
+        assert!(counter == 1, "Transformer should have only been called once");
     });
 }
 
 #[test]
-fn test_large_write_exceeding_buffer() {
+fn large_write_exceeding_buffer() {
     let output = Cursor::new(vec![]);
     // Double every byte
     let transformer = |buf: &mut Vec<u8>| {
@@ -72,7 +72,7 @@ fn test_large_write_exceeding_buffer() {
 }
 
 #[test]
-fn test_empty_write() {
+fn empty_write() {
     let output = Cursor::new(vec![]);
     let transformer = |_: &mut Vec<u8>| {};
 
@@ -88,7 +88,7 @@ fn test_empty_write() {
 }
 
 #[test]
-fn test_close_behavior() {
+fn close_behavior() {
     let output = Cursor::new(vec![]);
     // Add a prefix to the data
     let transformer = |buf: &mut Vec<u8>| {
@@ -109,7 +109,7 @@ fn test_close_behavior() {
 }
 
 #[test]
-fn test_identity_function() {
+fn identity_function() {
     // Test that an identity function (no transformation) works correctly
     let output = Cursor::new(vec![]);
     let transformer = |_: &mut Vec<u8>| {
@@ -124,4 +124,41 @@ fn test_identity_function() {
         let result = writer.into_inner().into_inner();
         assert_eq!(result, b"identity test");
     });
+}
+#[test]
+fn chunk_processing_after_large_write() {
+
+  // Create a transformation that reverses the data in each processed chunk.
+  // This will help verify that the chunk processing respects the buffer capacity.
+  let transformer = |buf: &mut Vec<u8>| {
+      println!("Processing chunk");
+      buf.reverse();
+  };
+
+  // Create output with a small buffer capacity.
+  let output = Cursor::new(vec![]);
+  // Set a small capacity to force chunking (e.g., 10 bytes).
+  let mut writer = AsyncMapWriter::with_capacity(output, transformer, 10);
+
+  block_on(async {
+      // Write a large chunk that exceeds the buffer capacity, forcing internal flushes.
+      let large_chunk = b"abcdefghijklmno"; // 15 bytes
+      writer.write_all(large_chunk).await.unwrap();
+      
+      // After writing the large chunk, the first 10 bytes ("abcdefghij") will be flushed
+      // and reversed to "jihgfedcba", while "klmno" remains in the buffer.
+      
+      // Now perform many small writes.
+      for &byte in b"0123456789" {
+          writer.write_all(&[byte]).await.unwrap();
+      }
+      // The remaining bytes "klmno0123456789" will be chunked
+      // into "klmno01234" and "56789", each reversed separately,
+      // resulting in "43210onmlk98765".
+      writer.flush().await.unwrap();
+
+      let result = writer.into_inner().into_inner();
+      let expected = b"jihgfedcba43210onmlk98765";
+      assert_eq!(result, expected, "Output should match transformed chunks");
+  });
 }
