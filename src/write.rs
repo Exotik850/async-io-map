@@ -4,9 +4,8 @@ use std::{
 };
 
 use futures_lite::{
-    AsyncWrite,
     io::{self, Result},
-    ready,
+    ready, AsyncWrite,
 };
 
 use crate::BUFFER_SIZE;
@@ -152,12 +151,27 @@ impl<W: AsyncWrite> AsyncWrite for AsyncMapWriter<'_, W> {
     }
 }
 
-pub trait AsyncMapWrite<'a, W> { 
-    fn map(self, process_fn: impl MapWriteFn + 'a) -> AsyncMapWriter<'a, W>;
+pub trait AsyncMapWrite<'a, W> {
+    fn map(self, process_fn: impl MapWriteFn + 'a) -> AsyncMapWriter<'a, W>
+    where
+        Self: Sized,
+    {
+        self.map_with_capacity(process_fn, BUFFER_SIZE)
+    }
+
+    fn map_with_capacity(
+        self,
+        process_fn: impl MapWriteFn + 'a,
+        capacity: usize,
+    ) -> AsyncMapWriter<'a, W>;
 }
 
 impl<'a, W: AsyncWrite> AsyncMapWrite<'a, W> for W {
-    fn map(self, process_fn: impl MapWriteFn + 'a) -> AsyncMapWriter<'a, W> {
-        AsyncMapWriter::new(self, process_fn)
+    fn map_with_capacity(
+        self,
+        process_fn: impl MapWriteFn + 'a,
+        capacity: usize,
+    ) -> AsyncMapWriter<'a, W> {
+        AsyncMapWriter::with_capacity(self, process_fn, capacity)
     }
 }
