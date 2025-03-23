@@ -3,7 +3,13 @@ use futures_lite::{io, ready, AsyncBufRead, AsyncRead};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+/// A trait for mapping data read from an underlying reader.
 pub trait MapReadFn {
+    /// Applies a mapping function to the data read from the underlying reader.
+    /// This function takes a mutable reference to a buffer and modifies it in place.
+    ///
+    /// The length of the buffer is gauranteed to be equal to the capacity of the underlying
+    /// buffer, until the last read operation, where it may be smaller.
     fn map_read(&mut self, buf: &mut [u8]);
 }
 
@@ -23,10 +29,9 @@ pin_project_lite::pin_project! {
       #[pin]
       inner: R,
       process_fn: Box<dyn MapReadFn + 'a>,
-      pos: usize,
-      cap: usize,
-      // Pre-allocated buffer to avoid allocations on each read
-      temp_buffer: Box<[u8]>,
+      pos: usize, // Current position in the buffer
+      cap: usize, // Current position and capacity of the buffer
+      buf: Box<[u8]>, // Internal buffer for reading data
   }
 }
 
@@ -41,7 +46,7 @@ where
             process_fn: Box::new(process_fn),
             pos: 0,
             cap: 0,
-            temp_buffer: vec![0; BUFFER_SIZE].into_boxed_slice(), // Start with a reasonable capacity
+            buf: vec![0; BUFFER_SIZE].into_boxed_slice(), // Start with a reasonable capacity
         }
     }
 
@@ -52,7 +57,7 @@ where
             process_fn: Box::new(process_fn),
             pos: 0,
             cap: 0,
-            temp_buffer: vec![0; capacity].into_boxed_slice(),
+            buf: vec![0; capacity].into_boxed_slice(),
         }
     }
 
@@ -79,7 +84,7 @@ where
         }
         let rem = {
             let this = self.as_mut().project();
-            &this.temp_buffer[*this.pos..*this.cap]
+            &this.buf[*this.pos..*this.cap]
         };
         let amt = std::cmp::min(rem.len(), buf.len());
         buf[..amt].copy_from_slice(&rem[..amt]);
@@ -95,14 +100,14 @@ impl<'a, R: AsyncRead> AsyncBufRead for AsyncMapReader<'a, R> {
             debug_assert!(*this.pos == *this.cap);
             *this.pos = 0;
             *this.cap = 0;
-            let read_amount = ready!(this.inner.as_mut().poll_read(cx, this.temp_buffer))?;
+            let read_amount = ready!(this.inner.as_mut().poll_read(cx, this.buf))?;
             if read_amount == 0 {
                 return Poll::Ready(Ok(&[]));
             }
-            (this.process_fn).map_read(&mut this.temp_buffer[..read_amount]);
+            (this.process_fn).map_read(&mut this.buf[..read_amount]);
             *this.cap = read_amount;
         }
-        Poll::Ready(Ok(&this.temp_buffer[*this.pos..*this.cap]))
+        Poll::Ready(Ok(&this.buf[*this.pos..*this.cap]))
     }
 
     fn consume(self: Pin<&mut Self>, amt: usize) {
@@ -111,7 +116,10 @@ impl<'a, R: AsyncRead> AsyncBufRead for AsyncMapReader<'a, R> {
     }
 }
 
+/// A trait for types that can be mapped to an `AsyncMapReader`.
 pub trait AsyncMapRead<'a, R> {
+    /// Maps the underlying reader to an `AsyncMapReader` using the provided mapping function.
+    /// This function uses a default buffer size (8KB) for the internal buffer.
     fn map(self, f: impl MapReadFn + 'a) -> AsyncMapReader<'a, R>
     where
         Self: Sized,
@@ -119,6 +127,11 @@ pub trait AsyncMapRead<'a, R> {
         self.map_with_capacity(f, BUFFER_SIZE)
     }
 
+    /// Maps the underlying reader to an `AsyncMapReader` using the provided mapping function
+    /// and a specified buffer capacity.
+    ///
+    /// This function allows for more control over the internal buffer size, which can be useful
+    /// for performance tuning.
     fn map_with_capacity(self, f: impl MapReadFn + 'a, capacity: usize) -> AsyncMapReader<'a, R>;
 }
 
